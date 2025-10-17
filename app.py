@@ -12,12 +12,12 @@ import os
 from datetime import datetime, timedelta
 from pytz import timezone
 from streamlit_autorefresh import st_autorefresh
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont 
 
 # 引入資料庫相關套件
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.dialects import postgresql as pg_types # 引入 PostgreSQL 專用類型
+from sqlalchemy.dialects import postgresql as pg_types 
 from contextlib import contextmanager
 
 # ===============================
@@ -52,7 +52,7 @@ def get_db_connection():
     except SQLAlchemyError as e:
         st.error(f"資料庫操作失敗: {e}")
         if conn:
-            conn.rollback() # 如果發生錯誤，嘗試回滾
+            conn.rollback()
     finally:
         if conn:
             conn.close()
@@ -61,11 +61,11 @@ def init_db_tables():
     """初始化資料庫表格（如果不存在），在服務啟動時運行"""
     try:
         with get_db_connection() as conn:
-            # 1. 住戶清單 (households)
+            # 1. 住戶清單 (households) - 修正結構，加入區分比例
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS households (
                     戶號 VARCHAR(50) PRIMARY KEY,
-                    備註 VARCHAR(255)
+                    區分比例 NUMERIC(10, 4)  -- 修正: 儲存區分比例
                 );
             """))
             # 2. 議題清單 (topics)
@@ -111,11 +111,22 @@ def load_data_from_db(table_name):
         return pd.DataFrame() 
 
 def save_households_to_db(df):
-    """將 DataFrame (住戶清單) 寫入 households 表格"""
+    """將 DataFrame (住戶清單) 寫入 households 表格 - 修正：處理區分比例"""
+    
+    # 檢查是否包含所有必要欄位
+    required_cols = ['戶號', '區分比例']
+    if not all(col in df.columns for col in required_cols):
+        # 這裡不發出錯誤，因為 admin_dashboard 外層已經做了檢查
+        return False
+        
     try:
-        df.to_sql('households', engine, if_exists='replace', index=False, 
+        # 只保留需要的欄位
+        df_to_save = df[required_cols].copy()
+        
+        # 寫入資料庫
+        df_to_save.to_sql('households', engine, if_exists='replace', index=False, 
                   dtype={'戶號': pg_types.VARCHAR(50), 
-                         '備註': pg_types.VARCHAR(255)})
+                         '區分比例': pg_types.NUMERIC(10, 4)}) 
         return True
     except Exception as e:
         st.error(f"寫入住戶清單到資料庫失敗: {e}")
@@ -214,38 +225,31 @@ def generate_qr_zip(households_df, base_url):
 
             draw = ImageDraw.Draw(new_img)
             
-            # *** 最終修正：直接使用最安全的預設字體 ***
-            # 解決 Render 環境中字體缺失導致的繪圖錯誤
-            font = ImageFont.load_default() 
+            # *** QR Code 最終強制修正區塊：完全繞過字體載入問題 ***
+            # 確保 ZIP 產生流程不中斷
+            font = None # 不載入任何字體物件
 
-            # 使用 textbbox 獲取文字邊界框
-            try:
-                bbox = draw.textbbox((0, 0), house_id, font=font) 
-                text_w = bbox[2] - bbox[0]
-                text_h = bbox[3] - bbox[1]
-            except Exception as e:
-                # 再次捕獲任何可能發生的繪圖錯誤，使用硬編碼尺寸作為備用
-                text_w = 100 
-                text_h = 20
-                st.warning(f"QR Code文字尺寸計算失敗: {e}，使用備用尺寸。")
-
-
-            # 計算文字居中位置
+            # 使用固定值來模擬文字尺寸 (簡化處理)
+            text_w = 100 
+            text_h = 20
+            
+            # 計算文字居中位置 (使用固定尺寸)
             text_x = (w - text_w) / 2
             text_y = (50 - text_h) / 2
-
+            
+            # 使用 draw.text 的最簡呼叫 (不指定 font)
             draw.text(
                 (text_x, text_y), 
                 house_id,
-                font=font,
-                fill="black"
+                fill="black" 
             )
             # *** 修正結束 ***
 
             new_img.paste(qr_img, (0, 50))
             
             img_bytes = io.BytesIO()
-            new_img.save(img_bytes, format="PNG")
+            new_img.save(img_bytes, format="PNG") 
+            
             img_bytes.seek(0)
             zf.writestr(f"{house_id}.png", img_bytes.read())
 
@@ -379,17 +383,19 @@ def admin_dashboard():
     st.write(f"目前狀態：{'✅ 開放中' if voting_open else '⛔ 已停止'}")
 
     # 2️⃣ 上傳住戶清單
-    st.subheader("上傳住戶清單 (必須包含 '戶號' 欄位)")
+    # *** 修正提示，增加區分比例欄位 ***
+    st.subheader("上傳住戶清單 (必須包含 '戶號' 及 '區分比例' 欄位)") 
     uploaded_households = st.file_uploader("選擇 households.csv", type=["csv"], key="upload_households")
     if uploaded_households:
         try:
             df = pd.read_csv(uploaded_households)
-            if '戶號' not in df.columns:
-                 st.error("檔案必須包含 '戶號' 欄位，請檢查您的 CSV。")
+            required_cols = ['戶號', '區分比例']
+            if not all(col in df.columns for col in required_cols):
+                 st.error(f"檔案必須包含 {required_cols} 欄位，請檢查您的 CSV。")
             elif save_households_to_db(df): 
                 st.success("✅ 住戶清單已上傳並覆蓋資料庫中的舊資料。")
             else:
-                st.error("寫入資料庫失敗，請檢查連線或檔案格式。")
+                st.error("寫入資料庫失敗，請檢查連線、欄位名稱或資料類型。")
         except Exception as e:
             st.error(f"讀取或處理檔案失敗: {e}")
             
@@ -421,8 +427,6 @@ def admin_dashboard():
                 st.session_state["qr_zip_data"] = qr_zip_data.getvalue()
                 st.success("✅ QR Code ZIP 產生完成！")
             else:
-                 # 這裡通常會是因為 generate_qr_zip 內部遇到錯誤但沒有返回 None 
-                 # (或被上層的 try-except 捕獲)
                  st.error("QR Code 產生失敗，請檢查基本網址或戶號格式。") 
         else:
             st.error("請先上傳住戶清單。")
