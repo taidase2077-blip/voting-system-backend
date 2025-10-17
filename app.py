@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 # 引入資料庫相關套件
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.dialects import postgresql as pg_types # <-- 修正: 引入 PostgreSQL 專用類型
+from sqlalchemy.dialects import postgresql as pg_types # 引入 PostgreSQL 專用類型
 from contextlib import contextmanager
 
 # ===============================
@@ -68,23 +68,23 @@ def init_db_tables():
                     備註 VARCHAR(255)
                 );
             """))
-            # 2. 議題清單 (topics) - 允許上傳，以 '議題' 為內容
+            # 2. 議題清單 (topics)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS topics (
                     id SERIAL PRIMARY KEY,
-                    議題 TEXT,               -- <-- 新增: 用於存放議題內容
+                    議題 TEXT,               
                     is_active BOOLEAN DEFAULT TRUE
                 );
             """))
-            # 3. 投票記錄 (votes) - 記錄每一戶的投票
+            # 3. 投票記錄 (votes)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS votes (
                     id SERIAL PRIMARY KEY,
                     戶號 VARCHAR(50),
-                    topic_id INTEGER,       -- <-- 修正: 連結到 topics 表
-                    投票結果 VARCHAR(10),   -- '同意' 或 '不同意'
+                    topic_id INTEGER,       
+                    投票結果 VARCHAR(10),   
                     投票時間 TIMESTAMP WITH TIME ZONE,
-                    UNIQUE (戶號, topic_id)  -- <-- 修正: 確保每戶對每議題只能投一次
+                    UNIQUE (戶號, topic_id) 
                 );
             """))
             # 4. 投票截止時間 (config)
@@ -108,13 +108,11 @@ def load_data_from_db(table_name):
         df = pd.read_sql(f"SELECT * FROM {table_name}", engine)
         return df
     except Exception as e:
-        # st.error(f"讀取資料庫表格 {table_name} 失敗: {e}")
         return pd.DataFrame() 
 
 def save_households_to_db(df):
     """將 DataFrame (住戶清單) 寫入 households 表格"""
     try:
-        # 修正: 使用 pg_types.VARCHAR 解決類型錯誤
         df.to_sql('households', engine, if_exists='replace', index=False, 
                   dtype={'戶號': pg_types.VARCHAR(50), 
                          '備註': pg_types.VARCHAR(255)})
@@ -126,17 +124,13 @@ def save_households_to_db(df):
 def save_topics_to_db(df):
     """將 DataFrame (議題清單) 寫入 topics 表格"""
     try:
-        # 確保有 '議題' 欄位
         if '議題' not in df.columns:
             st.error("議題清單檔案必須包含 '議題' 欄位。")
             return False
             
-        # 創建一個新的 DataFrame，包含 is_active 欄位
         df_to_save = df[['議題']].copy()
-        df_to_save['is_active'] = True # 預設上傳的議題都是活躍的
+        df_to_save['is_active'] = True 
         
-        # 寫入 topics 表格
-        # 使用 if_exists='replace' 會清空舊議題
         df_to_save.to_sql('topics', engine, if_exists='replace', index=False, 
                   dtype={'議題': pg_types.TEXT(), 
                          'is_active': pg_types.BOOLEAN()})
@@ -149,7 +143,6 @@ def record_vote_to_db(unit_id, topic_id, vote_result, vote_time):
     """記錄一筆投票到 votes 表格 (使用 UPSERT 處理重複投票)"""
     try:
         with get_db_connection() as conn:
-            # 使用 ON CONFLICT (戶號, topic_id) DO UPDATE 確保每戶對每議題只能投一次
             conn.execute(text("""
                 INSERT INTO votes (戶號, topic_id, 投票結果, 投票時間) 
                 VALUES (:unit, :topic, :result, :time)
@@ -194,7 +187,6 @@ def get_taipei_time():
 # 工具函式 (QR Code 仍保留)
 # ===============================
 def generate_qr_zip(households_df, base_url):
-    # ... (此函式保持不變，略過以節省篇幅) ...
     """產生含戶號文字的 QR Code ZIP（戶號顯示於上方）"""
     if households_df.empty:
         st.warning("尚未上傳住戶清單，無法產生 QR Code。")
@@ -222,24 +214,27 @@ def generate_qr_zip(households_df, base_url):
 
             draw = ImageDraw.Draw(new_img)
             try:
+                # 嘗試使用 Arial.ttf，如果失敗則使用預設字體
                 font = ImageFont.truetype("Arial.ttf", 28)
             except:
                 font = ImageFont.load_default()
 
+            # *** 關鍵修正：使用 textbbox 替代 textsize ***
             bbox = draw.textbbox((0, 0), house_id, font=font) 
-            text_w = bbox[2] - bbox[0] # 寬度 = 右邊界 - 左邊界
-            text_h = bbox[3] - bbox[1] # 高度 = 下邊界 - 上邊界
+            text_w = bbox[2] - bbox[0]
+            text_h = bbox[3] - bbox[1]
 
             # 計算文字居中位置
             text_x = (w - text_w) / 2
             text_y = (50 - text_h) / 2
 
             draw.text(
-            (text_x, text_y), # 使用計算後的坐標
-            house_id,
-            font=font,
-            fill="black"
+                (text_x, text_y), 
+                house_id,
+                font=font,
+                fill="black"
             )
+            # *** 修正結束 ***
 
             new_img.paste(qr_img, (0, 50))
             
@@ -266,13 +261,11 @@ def voter_page():
 
     st.info(f"目前登入戶號：{unit}")
     
-    # 檢查該戶號是否存在
     households_df = load_data_from_db('households')
     if households_df.empty or unit not in households_df['戶號'].values:
         st.error("無效的戶號，請聯繫管理員。")
         return
 
-    # 檢查投票是否開放
     voting_open_str = load_config('voting_open')
     voting_open = voting_open_str == 'True' if voting_open_str else False
     
@@ -280,7 +273,6 @@ def voter_page():
         st.warning("投票尚未開始或已截止。")
         return
         
-    # 檢查是否已過截止時間
     end_time_str = load_config('end_time')
     if end_time_str:
         try:
@@ -294,7 +286,6 @@ def voter_page():
         except:
             pass 
 
-    # 獲取活躍議題清單
     topics_df = load_data_from_db('topics')
     active_topics = topics_df[topics_df['is_active'] == True]
     
@@ -304,7 +295,6 @@ def voter_page():
         
     st.header("進行投票")
     
-    # 檢查已投過的票
     votes_df = load_data_from_db('votes')
     voted_topic_ids = votes_df[votes_df['戶號'] == unit]['topic_id'].tolist()
     
@@ -318,14 +308,13 @@ def voter_page():
         if topic_id in voted_topic_ids:
             st.success("✅ 您已針對此議題完成投票。")
         else:
-            # 投票介面
             vote_key = f"vote_{topic_id}"
             vote_option = st.radio("請選擇您的投票結果：", ("同意", "不同意"), key=vote_key, horizontal=True)
             
             if st.button(f"提交對議題 {topic_id} 的投票", key=f"submit_{topic_id}"):
                 if record_vote_to_db(unit, topic_id, vote_option, get_taipei_time()):
                     st.success(f"投票成功！您選擇了：{vote_option}")
-                    st.rerun() # 重新運行頁面，顯示已投票狀態
+                    st.rerun() 
 
 # ===============================
 # 管理員登入 (保持不變)
@@ -391,24 +380,23 @@ def admin_dashboard():
             df = pd.read_csv(uploaded_households)
             if '戶號' not in df.columns:
                  st.error("檔案必須包含 '戶號' 欄位，請檢查您的 CSV。")
-            elif save_households_to_db(df): # 使用修正後的 DB 寫入函式
+            elif save_households_to_db(df): 
                 st.success("✅ 住戶清單已上傳並覆蓋資料庫中的舊資料。")
             else:
                 st.error("寫入資料庫失敗，請檢查連線或檔案格式。")
         except Exception as e:
             st.error(f"讀取或處理檔案失敗: {e}")
             
-    # 3️⃣ 上傳議題清單 (新增)
+    # 3️⃣ 上傳議題清單
     st.subheader("上傳議題清單 (必須包含 '議題' 欄位)")
     st.warning("上傳新議題清單會覆蓋所有舊議題，請謹慎操作。")
     uploaded_topics = st.file_uploader("選擇 topics.csv", type=["csv"], key="upload_topics")
     if uploaded_topics:
         try:
             df = pd.read_csv(uploaded_topics)
-            if save_topics_to_db(df): # 使用新的議題寫入函式
+            if save_topics_to_db(df): 
                 st.success("✅ 議題清單已上傳並覆蓋資料庫中的舊議題。")
             else:
-                # 錯誤信息已在 save_topics_to_db 內部處理
                 pass
         except Exception as e:
             st.error(f"讀取或處理議題檔案失敗: {e}")
@@ -416,7 +404,8 @@ def admin_dashboard():
 
     # 4️⃣ 住戶 QR Code 產生
     st.subheader("住戶 QR Code 投票連結")
-    base_url = st.text_input("投票網站基本網址（例如：https://smartvoteapp.onrender.com）", "https://your-render-url.onrender.com")
+    # *** 修正 base_url 預設值 ***
+    base_url = st.text_input("投票網站基本網址（例如：https://voting-streamlit-app.onrender.com）", "https://voting-streamlit-app.onrender.com")
 
     if st.button("📦 產生 QR Code ZIP"):
         households_df = load_data_from_db('households') 
@@ -439,7 +428,7 @@ def admin_dashboard():
         )
         del st.session_state["qr_zip_data"] 
         
-    # 5️⃣ 設定投票截止時間 (保持不變)
+    # 5️⃣ 設定投票截止時間
     st.subheader("設定投票截止時間")
     now = get_taipei_time()
     option = st.selectbox("選擇截止時間（以目前時間為基準）", [5, 10, 15, 20, 25, 30], format_func=lambda x: f"{x} 分鐘後")
@@ -450,7 +439,7 @@ def admin_dashboard():
         if save_config('end_time', end_time_str):
             st.success(f"截止時間已設定為 {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
         
-    # 6️⃣ 投票結果統計 (更新為多議題統計)
+    # 6️⃣ 投票結果統計
     st.subheader("📈 投票結果統計（每 10 秒自動更新）")
     st_autorefresh(interval=10 * 1000, key="refresh_votes")
 
@@ -470,7 +459,6 @@ def admin_dashboard():
          st.info("目前尚無投票資料或議題。")
          return
          
-    # 按議題分組統計
     for _, topic_row in topics_df.iterrows():
         topic_id = topic_row['id']
         topic_content = topic_row['議題']
