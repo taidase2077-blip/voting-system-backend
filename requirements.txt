@@ -1,0 +1,8 @@
+streamlit
+pandas
+qrcode
+Pillow
+pytz
+streamlit-autorefresh
+psycopg2-binary
+sqlalchemy
