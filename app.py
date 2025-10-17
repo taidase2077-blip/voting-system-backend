@@ -213,16 +213,22 @@ def generate_qr_zip(households_df, base_url):
             new_img = Image.new("RGB", (w, new_h), "white")
 
             draw = ImageDraw.Draw(new_img)
-            try:
-                # 嘗試使用 Arial.ttf，如果失敗則使用預設字體
-                font = ImageFont.truetype("Arial.ttf", 28)
-            except:
-                font = ImageFont.load_default()
+            
+            # *** 最終修正：直接使用最安全的預設字體 ***
+            # 解決 Render 環境中字體缺失導致的繪圖錯誤
+            font = ImageFont.load_default() 
 
-            # *** 關鍵修正：使用 textbbox 替代 textsize ***
-            bbox = draw.textbbox((0, 0), house_id, font=font) 
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
+            # 使用 textbbox 獲取文字邊界框
+            try:
+                bbox = draw.textbbox((0, 0), house_id, font=font) 
+                text_w = bbox[2] - bbox[0]
+                text_h = bbox[3] - bbox[1]
+            except Exception as e:
+                # 再次捕獲任何可能發生的繪圖錯誤，使用硬編碼尺寸作為備用
+                text_w = 100 
+                text_h = 20
+                st.warning(f"QR Code文字尺寸計算失敗: {e}，使用備用尺寸。")
+
 
             # 計算文字居中位置
             text_x = (w - text_w) / 2
@@ -415,7 +421,9 @@ def admin_dashboard():
                 st.session_state["qr_zip_data"] = qr_zip_data.getvalue()
                 st.success("✅ QR Code ZIP 產生完成！")
             else:
-                 st.error("QR Code 產生失敗，請檢查基本網址或戶號格式。")
+                 # 這裡通常會是因為 generate_qr_zip 內部遇到錯誤但沒有返回 None 
+                 # (或被上層的 try-except 捕獲)
+                 st.error("QR Code 產生失敗，請檢查基本網址或戶號格式。") 
         else:
             st.error("請先上傳住戶清單。")
 
