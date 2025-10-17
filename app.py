@@ -226,12 +226,19 @@ def generate_qr_zip(households_df, base_url):
             except:
                 font = ImageFont.load_default()
 
-            text_w, text_h = draw.textsize(house_id, font=font)
+            bbox = draw.textbbox((0, 0), house_id, font=font) 
+            text_w = bbox[2] - bbox[0] # 寬度 = 右邊界 - 左邊界
+            text_h = bbox[3] - bbox[1] # 高度 = 下邊界 - 上邊界
+
+            # 計算文字居中位置
+            text_x = (w - text_w) / 2
+            text_y = (50 - text_h) / 2
+
             draw.text(
-                ((w - text_w) / 2, (50 - text_h) / 2),
-                house_id,
-                font=font,
-                fill="black"
+            (text_x, text_y), # 使用計算後的坐標
+            house_id,
+            font=font,
+            fill="black"
             )
 
             new_img.paste(qr_img, (0, 50))
