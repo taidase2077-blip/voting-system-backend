@@ -61,11 +61,11 @@ def init_db_tables():
     """初始化資料庫表格（如果不存在），在服務啟動時運行"""
     try:
         with get_db_connection() as conn:
-            # 1. 住戶清單 (households) - 修正結構，加入區分比例
+            # 1. 住戶清單 (households)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS households (
                     戶號 VARCHAR(50) PRIMARY KEY,
-                    區分比例 NUMERIC(10, 4)  -- 修正: 儲存區分比例
+                    區分比例 NUMERIC(10, 4) 
                 );
             """))
             # 2. 議題清單 (topics)
@@ -111,19 +111,13 @@ def load_data_from_db(table_name):
         return pd.DataFrame() 
 
 def save_households_to_db(df):
-    """將 DataFrame (住戶清單) 寫入 households 表格 - 修正：處理區分比例"""
-    
-    # 檢查是否包含所有必要欄位
+    """將 DataFrame (住戶清單) 寫入 households 表格"""
     required_cols = ['戶號', '區分比例']
     if not all(col in df.columns for col in required_cols):
-        # 這裡不發出錯誤，因為 admin_dashboard 外層已經做了檢查
         return False
         
     try:
-        # 只保留需要的欄位
         df_to_save = df[required_cols].copy()
-        
-        # 寫入資料庫
         df_to_save.to_sql('households', engine, if_exists='replace', index=False, 
                   dtype={'戶號': pg_types.VARCHAR(50), 
                          '區分比例': pg_types.NUMERIC(10, 4)}) 
@@ -195,10 +189,10 @@ def get_taipei_time():
     return datetime.now(timezone("Asia/Taipei"))
 
 # ===============================
-# 工具函式 (QR Code 仍保留)
+# 工具函式 (QR Code 最終版本)
 # ===============================
 def generate_qr_zip(households_df, base_url):
-    """產生含戶號文字的 QR Code ZIP（戶號顯示於上方）"""
+    """產生 QR Code ZIP (極簡版本，不帶文字，以確保 Render 兼容性)"""
     if households_df.empty:
         st.warning("尚未上傳住戶清單，無法產生 QR Code。")
         return None
@@ -218,40 +212,17 @@ def generate_qr_zip(households_df, base_url):
             qr_link = f"{base_url}?unit={house_id}"
 
             qr_img = qrcode.make(qr_link).convert("RGB")
-            w, h = qr_img.size
-
-            new_h = h + 50
-            new_img = Image.new("RGB", (w, new_h), "white")
-
-            draw = ImageDraw.Draw(new_img)
             
-            # *** QR Code 最終強制修正區塊：完全繞過字體載入問題 ***
-            # 確保 ZIP 產生流程不中斷
-            font = None # 不載入任何字體物件
-
-            # 使用固定值來模擬文字尺寸 (簡化處理)
-            text_w = 100 
-            text_h = 20
-            
-            # 計算文字居中位置 (使用固定尺寸)
-            text_x = (w - text_w) / 2
-            text_y = (50 - text_h) / 2
-            
-            # 使用 draw.text 的最簡呼叫 (不指定 font)
-            draw.text(
-                (text_x, text_y), 
-                house_id,
-                fill="black" 
-            )
+            # *** 極簡修正：直接使用 QR code 圖片作為最終圖片 ***
+            new_img = qr_img 
             # *** 修正結束 ***
-
-            new_img.paste(qr_img, (0, 50))
             
             img_bytes = io.BytesIO()
             new_img.save(img_bytes, format="PNG") 
             
             img_bytes.seek(0)
-            zf.writestr(f"{house_id}.png", img_bytes.read())
+            # 檔案名包含戶號
+            zf.writestr(f"{house_id}.png", img_bytes.read()) 
 
     zip_buffer.seek(0)
     return zip_buffer
@@ -383,7 +354,6 @@ def admin_dashboard():
     st.write(f"目前狀態：{'✅ 開放中' if voting_open else '⛔ 已停止'}")
 
     # 2️⃣ 上傳住戶清單
-    # *** 修正提示，增加區分比例欄位 ***
     st.subheader("上傳住戶清單 (必須包含 '戶號' 及 '區分比例' 欄位)") 
     uploaded_households = st.file_uploader("選擇 households.csv", type=["csv"], key="upload_households")
     if uploaded_households:
@@ -426,6 +396,7 @@ def admin_dashboard():
             if qr_zip_data:
                 st.session_state["qr_zip_data"] = qr_zip_data.getvalue()
                 st.success("✅ QR Code ZIP 產生完成！")
+                st.rerun() # 重新運行以顯示下載按鈕
             else:
                  st.error("QR Code 產生失敗，請檢查基本網址或戶號格式。") 
         else:
@@ -438,7 +409,8 @@ def admin_dashboard():
             file_name="QR_Codes.zip",
             mime="application/zip"
         )
-        del st.session_state["qr_zip_data"] 
+        # 這裡不刪除，讓使用者可以再次下載
+        # del st.session_state["qr_zip_data"] 
         
     # 5️⃣ 設定投票截止時間
     st.subheader("設定投票截止時間")
