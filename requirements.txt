@@ -1,19 +1,25 @@
-# 基本套件
-pip>=25.2
+# Python 環境需求
+pip>=25.1.1
 setuptools>=69.0
 wheel>=0.43
 
-# 主程式需求
+# Streamlit 主程式
 streamlit==1.38.0
+
+# 自動刷新功能
+streamlit-autorefresh==1.0.1
+
+# 資料處理
 pandas==2.2.2
 numpy==1.26.4
+
+# 影像與輸出
 Pillow==10.4.0
 qrcode[pil]==7.4.2
+
+# Excel 輸出支援
 openpyxl==3.1.5
 XlsxWriter==3.2.0
 
-# 自動刷新功能（統計頁每10秒更新）
-streamlit-autorefresh==1.0.1
-
-# 圖表與繪圖（若之後需加圖表分析）
+# 繪圖功能
 matplotlib==3.9.0
