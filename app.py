@@ -2,8 +2,12 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import io
+import zipfile
+import qrcode
 from datetime import datetime, timedelta
 from pytz import timezone
+from PIL import Image, ImageDraw, ImageFont
 
 # ---------- 🧩 初始化資料 ----------
 DB_FOLDER = "db"
@@ -13,7 +17,7 @@ CONFIG_FILE = os.path.join(DB_FOLDER, "config.json")
 VOTE_FILE = os.path.join(DB_FOLDER, "votes.csv")
 TOPIC_FILE = os.path.join(DB_FOLDER, "topics.csv")
 HOUSEHOLD_FILE = os.path.join(DB_FOLDER, "households.csv")
-ADMIN_FILE = "admin_config.json"  # 這裡會用你的帳密檔案
+ADMIN_FILE = "admin_config.json"  # 管理員帳密
 
 # ---------- 🕒 時區處理 ----------
 def get_taipei_time():
@@ -59,6 +63,54 @@ def check_login(username, password):
     except Exception:
         return False
 
+# ---------- 🧰 產生帶戶號文字的 QR Code ----------
+def generate_qr_with_label(vote_url, household_id):
+    """生成帶有戶號標籤的 QR Code 圖片"""
+    qr = qrcode.QRCode(
+        version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4
+    )
+    qr.add_data(vote_url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+
+    # 建立新圖像（在 QR Code 下方預留文字空間）
+    width, height = qr_img.size
+    new_height = height + 60
+    new_img = Image.new("RGB", (width, new_height), "white")
+    new_img.paste(qr_img, (0, 0))
+
+    # 寫上戶號
+    draw = ImageDraw.Draw(new_img)
+    try:
+        font = ImageFont.truetype("arial.ttf", 36)  # Windows 通常有 Arial
+    except:
+        font = ImageFont.load_default()
+    text = str(household_id)
+    text_width = draw.textlength(text, font=font)
+    text_x = (width - text_width) / 2
+    text_y = height + 10
+    draw.text((text_x, text_y), text, font=font, fill="black")
+
+    return new_img
+
+# ---------- 🧰 產生 QR Code ZIP ----------
+def generate_qr_zip(df):
+    """根據住戶清單生成含戶號文字的 QR Code ZIP 檔"""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zipf:
+        for _, row in df.iterrows():
+            if "戶號" not in row or pd.isna(row["戶號"]):
+                continue
+            household_id = str(row["戶號"]).strip()
+            # ✅ 使用實際部署網址
+            vote_url = f"https://voting-streamlit-app.onrender.com?vote={household_id}"
+            qr_img = generate_qr_with_label(vote_url, household_id)
+            img_bytes = io.BytesIO()
+            qr_img.save(img_bytes, format="PNG")
+            zipf.writestr(f"{household_id}.png", img_bytes.getvalue())
+    buffer.seek(0)
+    return buffer
+
 # ---------- 🧰 管理員後台 ----------
 def admin_dashboard():
     st.title("🛠️ 管理員後台")
@@ -73,8 +125,20 @@ def admin_dashboard():
             try:
                 import openpyxl  # 確保 openpyxl 已安裝
                 df = pd.read_excel(household_file)
-                save_households_to_db(df)
-                st.success("✅ 住戶清單上傳成功")
+                if "戶號" not in df.columns:
+                    st.error("⚠️ Excel 檔必須包含「戶號」欄位")
+                else:
+                    save_households_to_db(df)
+                    st.success("✅ 住戶清單上傳成功")
+
+                    # 生成帶戶號標籤的 QR Code ZIP
+                    qr_zip = generate_qr_zip(df)
+                    st.download_button(
+                        label="📦 下載戶號 QR Code ZIP（含戶號標籤）",
+                        data=qr_zip,
+                        file_name="household_qrcodes.zip",
+                        mime="application/zip",
+                    )
             except ImportError:
                 st.error("⚠️ 請安裝 openpyxl 套件：pip install openpyxl")
 
