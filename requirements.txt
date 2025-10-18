@@ -1,25 +1,17 @@
-# Python 環境需求
-pip>=25.1.1
-setuptools>=69.0
-wheel>=0.43
-
-# Streamlit 主程式
+# --- 核心 ---
 streamlit==1.38.0
-
-# 自動刷新功能
-streamlit-autorefresh==1.0.1
-
-# 資料處理
 pandas==2.2.2
 numpy==1.26.4
 
-# 影像與輸出
-Pillow==10.4.0
+# --- 輔助 ---
 qrcode[pil]==7.4.2
-
-# Excel 輸出支援
+Pillow==10.4.0
 openpyxl==3.1.5
 XlsxWriter==3.2.0
+pytz==2024.1
+streamlit-autorefresh==1.0.1
 
-# 繪圖功能
-matplotlib==3.9.0
+# --- 避免相容性問題 ---
+setuptools<70.0
+wheel
+pip<25.2
