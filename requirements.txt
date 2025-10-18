@@ -1,8 +1,8 @@
 # requirements.txt
 # --- 核心 ---
 streamlit==1.38.0
-pandas==2.2.3   # 保持此版本，已解決 build 失敗
-numpy==2.3.4    # 修正：改用 Python 3.13 兼容的版本
+pandas==2.2.3   # 兼容 Python 3.13
+numpy==2.3.4    # 兼容 Python 3.13
 
 # --- 輔助 ---
 qrcode[pil]==7.4.2
