@@ -21,7 +21,7 @@ ADMIN_FILE = "admin_config.json" # 管理員帳密
 
 # ---------- 🕒 時區處理 ----------
 def get_taipei_time():
-    return datetime.now(timezone("Asia/Taipei"))
+    return datetime.now(timezone("Asia/Taipei"))
 
 # ---------- ⚙️ 設定管理 ----------
 def save_config(key, value):
