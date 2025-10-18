@@ -72,13 +72,17 @@ def generate_qrcodes(issues, base_url="https://voting-streamlit-app.onrender.com
 def home_page():
     st.title("🏠 社區投票系統")
 
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params  # ✅ 改新版 API
+
+    # 顯示管理員登入入口
+    with st.expander("🔐 管理員登入入口"):
+        st.markdown("[👉 前往管理員登入](?admin=true)")
 
     if "unit" not in query_params:
         st.warning("未偵測到戶號參數，請由專屬 QR Code 登入。")
         return
 
-    unit = query_params["unit"][0] if isinstance(query_params["unit"], list) else query_params["unit"]
+    unit = query_params.get("unit", "")
     issues = load_issues()
 
     if not issues:
@@ -205,7 +209,7 @@ def admin_page():
 # 主程式流程
 # ===============================
 def main():
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params  # ✅ 改新版 API
 
     if "admin" in query_params:
         if not st.session_state.admin_logged_in:
