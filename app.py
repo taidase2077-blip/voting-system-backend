@@ -1,11 +1,24 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
+import json
+import sys
+import subprocess
 from datetime import datetime, timedelta
 from pytz import timezone
 
 # ===============================
-# 🔧 資料庫初始化
+# 🧩 檢查 openpyxl 套件（避免匯入錯誤）
+# ===============================
+try:
+    import openpyxl
+except ImportError:
+    st.warning("⚠️ 尚未安裝 openpyxl，正在嘗試自動安裝中...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
+    import openpyxl
+
+# ===============================
+# 🧱 資料庫初始化
 # ===============================
 def init_db():
     conn = sqlite3.connect("voting.db")
@@ -106,9 +119,11 @@ def voter_page():
 
     voting_open = load_config("voting_open") == "True"
     end_time_str = load_config("end_time")
+
     if not voting_open:
-        st.info("⛔ 投票尚未開放，請稍候。")
+        st.info("⛔ 投票尚未開放。")
         return
+
     if end_time_str:
         end_time = datetime.strptime(end_time_str, "%Y-%m-%d %H:%M:%S %z")
         if get_taipei_time() > end_time:
@@ -149,17 +164,29 @@ def voter_page():
     conn.close()
 
 # ===============================
-# 🔑 管理員登入
+# 🔑 管理員登入（讀取 admin_config.json）
 # ===============================
 def admin_login():
     st.title("🔐 管理員登入")
-    password = st.text_input("請輸入密碼", type="password")
+
+    try:
+        with open("admin_config.json", "r", encoding="utf-8") as f:
+            admin_data = json.load(f)
+    except Exception as e:
+        st.error("❌ 無法讀取 admin_config.json，請確認檔案存在且格式正確。")
+        st.stop()
+
+    username = st.text_input("帳號")
+    password = st.text_input("密碼", type="password")
+
     if st.button("登入"):
-        if password == "admin123":  # 可自行修改
+        if username in admin_data and admin_data[username] == password:
             st.session_state["admin_logged_in"] = True
+            st.session_state["admin_user"] = username
+            st.success(f"歡迎登入，{username}！")
             st.rerun()
         else:
-            st.error("密碼錯誤。")
+            st.error("帳號或密碼錯誤。")
 
 # ===============================
 # 🛠️ 管理員後台
@@ -192,7 +219,7 @@ def admin_dashboard():
         voting_open = load_config("voting_open") == "True"
         toggle_val = st.toggle("開啟投票", value=voting_open)
         save_config("voting_open", str(toggle_val))
-        st.info("🔄 投票狀態已更新為：" + ("✅ 開啟" if toggle_val else "⛔ 關閉"))
+        st.info("🔄 投票狀態：" + ("✅ 已開啟" if toggle_val else "⛔ 已關閉"))
 
         st.divider()
         st.subheader("設定投票截止時間（台北時間）")
@@ -219,11 +246,11 @@ def admin_dashboard():
         else:
             minutes = int(option.split("分鐘")[0])
             end_dt = now_taipei + timedelta(minutes=minutes)
-            st.info(f"⏰ 系統將自動設定為：{end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            st.info(f"⏰ 系統將設定截止時間為：{end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
 
         if st.button("儲存截止時間"):
             save_config("end_time", end_dt.strftime("%Y-%m-%d %H:%M:%S %z"))
-            st.success(f"✅ 已設定截止時間為：{end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            st.success(f"✅ 已設定截止時間：{end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
 
     # --- 投票統計 ---
     with tab3:
