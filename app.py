@@ -56,7 +56,7 @@ def load_admins():
 def generate_qrcodes(issues, base_url="https://voting-streamlit-app.onrender.com"):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for i in range(1, 11):  # 假設 1~10 戶
+        for i in range(1, 11):  # 假設 1~10 戶，可改成自訂
             params = {"unit": str(i)}
             url = f"{base_url}?{urlencode(params)}"
             qr = qrcode.make(url)
@@ -67,17 +67,18 @@ def generate_qrcodes(issues, base_url="https://voting-streamlit-app.onrender.com
     return buffer
 
 # ===============================
-# 首頁
+# 首頁（住戶投票）
 # ===============================
 def home_page():
     st.title("🏠 社區投票系統")
-    query_params = st.query_params
+
+    query_params = st.experimental_get_query_params()
 
     if "unit" not in query_params:
         st.warning("未偵測到戶號參數，請由專屬 QR Code 登入。")
         return
 
-    unit = query_params["unit"]
+    unit = query_params["unit"][0] if isinstance(query_params["unit"], list) else query_params["unit"]
     issues = load_issues()
 
     if not issues:
@@ -86,7 +87,6 @@ def home_page():
 
     st.header(f"住戶 {unit} 的投票頁面")
     st.divider()
-
     load_votes()
 
     for issue in issues:
@@ -120,7 +120,7 @@ def record_vote(unit, issue, vote):
         (st.session_state.votes["戶號"] == unit)
         & (st.session_state.votes["議題"] == issue)
     ].empty:
-        return  # 已投過票，不再重複紀錄
+        return  # 已投過票不再重複紀錄
 
     new_row = {
         "戶號": unit,
@@ -205,7 +205,8 @@ def admin_page():
 # 主程式流程
 # ===============================
 def main():
-    query_params = st.query_params
+    query_params = st.experimental_get_query_params()
+
     if "admin" in query_params:
         if not st.session_state.admin_logged_in:
             admin_login()
