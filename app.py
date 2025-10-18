@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timedelta
 from pytz import timezone
 from streamlit_autorefresh import st_autorefresh
-from PIL import Image, ImageDraw, ImageFont 
+from PIL import Image
 
 # 引入資料庫相關套件
 from sqlalchemy import create_engine, text
@@ -232,7 +232,7 @@ def generate_qr_zip(households_df, base_url):
 # ===============================
 def voter_page():
     st.title("🏠 社區投票系統")
-    params = st.query_params
+    params = st.experimental_get_query_params()
     unit = params.get("unit", [None])[0] if isinstance(params.get("unit"), list) else params.get("unit")
 
     if not unit:
@@ -294,7 +294,7 @@ def voter_page():
             if st.button(f"提交對議題 {topic_id} 的投票", key=f"submit_{topic_id}"):
                 if record_vote_to_db(unit, topic_id, vote_option, get_taipei_time()):
                     st.success(f"投票成功！您選擇了：{vote_option}")
-                    st.rerun() 
+                    st.experimental_rerun() 
 
 # ===============================
 # 管理員登入 (保持不變)
@@ -309,187 +309,3 @@ def admin_login():
     password = st.text_input("密碼", type="password")
 
     if st.button("登入"):
-        if not os.path.exists(ADMIN_FILE):
-            st.error("找不到 admin_config.json，請確認檔案存在。")
-            return
-
-        try:
-            with open(ADMIN_FILE, "r", encoding="utf-8") as f:
-                admin_data = json.load(f)
-        except Exception as e:
-            st.error(f"讀取 admin_config.json 失敗：{e}")
-            return
-
-        if username in admin_data and password == str(admin_data[username]):
-            st.session_state.is_admin = True
-            st.session_state.admin_user = username
-            st.success(f"登入成功！歡迎管理員 {username}")
-            st.rerun()
-        else:
-            st.error("帳號或密碼錯誤。")
-
-# ===============================
-# 管理後台
-# ===============================
-def admin_dashboard():
-    st.title("🧩 管理後台")
-
-    # 1️⃣ 投票控制
-    st.subheader("投票控制")
-    voting_open = load_config('voting_open') == 'True'
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🟢 開啟投票"):
-            save_config('voting_open', 'True')
-            st.success("投票已開啟！")
-            st.rerun()
-    with col2:
-        if st.button("🔴 停止投票"):
-            save_config('voting_open', 'False')
-            st.warning("投票已停止。")
-            st.rerun()
-
-    st.write(f"目前狀態：{'✅ 開放中' if voting_open else '⛔ 已停止'}")
-
-    # 2️⃣ 上傳住戶清單
-    st.subheader("上傳住戶清單 (必須包含 '戶號' 及 '區分比例' 欄位)") 
-    uploaded_households = st.file_uploader("選擇 households.csv", type=["csv"], key="upload_households")
-    if uploaded_households:
-        try:
-            df = pd.read_csv(uploaded_households)
-            required_cols = ['戶號', '區分比例']
-            if not all(col in df.columns for col in required_cols):
-                 st.error(f"檔案必須包含 {required_cols} 欄位，請檢查您的 CSV。")
-            elif save_households_to_db(df): 
-                st.success("✅ 住戶清單已上傳並覆蓋資料庫中的舊資料。")
-            else:
-                st.error("寫入資料庫失敗，請檢查連線、欄位名稱或資料類型。")
-        except Exception as e:
-            st.error(f"讀取或處理檔案失敗: {e}")
-            
-    # 3️⃣ 上傳議題清單
-    st.subheader("上傳議題清單 (必須包含 '議題' 欄位)")
-    st.warning("上傳新議題清單會覆蓋所有舊議題，請謹慎操作。")
-    uploaded_topics = st.file_uploader("選擇 topics.csv", type=["csv"], key="upload_topics")
-    if uploaded_topics:
-        try:
-            df = pd.read_csv(uploaded_topics)
-            if save_topics_to_db(df): 
-                st.success("✅ 議題清單已上傳並覆蓋資料庫中的舊議題。")
-            else:
-                pass
-        except Exception as e:
-            st.error(f"讀取或處理議題檔案失敗: {e}")
-
-
-    # 4️⃣ 住戶 QR Code 產生
-    st.subheader("住戶 QR Code 投票連結")
-    # *** 修正 base_url 預設值 ***
-    base_url = st.text_input("投票網站基本網址（例如：https://voting-streamlit-app.onrender.com）", "https://voting-streamlit-app.onrender.com")
-
-    if st.button("📦 產生 QR Code ZIP"):
-        households_df = load_data_from_db('households') 
-        if not households_df.empty:
-            qr_zip_data = generate_qr_zip(households_df, base_url)
-            if qr_zip_data:
-                st.session_state["qr_zip_data"] = qr_zip_data.getvalue()
-                st.success("✅ QR Code ZIP 產生完成！")
-                st.rerun() # 重新運行以顯示下載按鈕
-            else:
-                 st.error("QR Code 產生失敗，請檢查基本網址或戶號格式。") 
-        else:
-            st.error("請先上傳住戶清單。")
-
-    if "qr_zip_data" in st.session_state:
-        st.download_button(
-            label="📥 下載 QR Code ZIP",
-            data=st.session_state["qr_zip_data"],
-            file_name="QR_Codes.zip",
-            mime="application/zip"
-        )
-        # 這裡不刪除，讓使用者可以再次下載
-        # del st.session_state["qr_zip_data"] 
-        
-    # 5️⃣ 設定投票截止時間
-    st.subheader("設定投票截止時間")
-    now = get_taipei_time()
-    option = st.selectbox("選擇截止時間（以目前時間為基準）", [5, 10, 15, 20, 25, 30], format_func=lambda x: f"{x} 分鐘後")
-    end_time = now + timedelta(minutes=option)
-
-    if st.button("儲存截止時間"):
-        end_time_str = end_time.strftime("%Y-%m-%d %H:%M:%S %z")
-        if save_config('end_time', end_time_str):
-            st.success(f"截止時間已設定為 {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        
-    # 6️⃣ 投票結果統計
-    st.subheader("📈 投票結果統計（每 10 秒自動更新）")
-    st_autorefresh(interval=10 * 1000, key="refresh_votes")
-
-    votes_df = load_data_from_db('votes')
-    households_df = load_data_from_db('households')
-    topics_df = load_data_from_db('topics')
-
-    if households_df.empty:
-        st.info("請先上傳住戶清單。")
-        return
-
-    total_households = len(households_df)
-    st.metric("🏠 總戶數", total_households)
-    st.markdown("---")
-    
-    if votes_df.empty or topics_df.empty:
-         st.info("目前尚無投票資料或議題。")
-         return
-         
-    for _, topic_row in topics_df.iterrows():
-        topic_id = topic_row['id']
-        topic_content = topic_row['議題']
-        
-        st.markdown(f"#### 議題 {topic_id}: {topic_content}")
-        
-        topic_votes = votes_df[votes_df['topic_id'] == topic_id]
-        
-        voted_households = topic_votes["戶號"].nunique()
-        remaining = total_households - voted_households
-        
-        agree = (topic_votes["投票結果"] == "同意").sum()
-        disagree = (topic_votes["投票結果"] == "不同意").sum()
-        total_votes = agree + disagree
-        
-        col_res_1, col_res_2, col_res_3 = st.columns(3)
-        col_res_1.metric("🗳 已投票戶數", voted_households)
-        col_res_2.metric("⏳ 剩餘可投票戶數", remaining)
-        col_res_3.metric("總投票數", total_votes)
-        
-        if total_votes > 0:
-            agree_ratio = agree / total_votes * 100
-            disagree_ratio = disagree / total_votes * 100
-            
-            col_met_1, col_met_2 = st.columns(2)
-            col_met_1.metric("✅ 同意票數", f"{agree} 戶", delta=f"{agree_ratio:.2f}%")
-            col_met_2.metric("❌ 不同意票數", f"{disagree} 戶", delta=f"{disagree_ratio:.2f}%")
-        else:
-             st.info("此議題尚未收到投票。")
-        st.markdown("***")
-
-
-# ===============================
-# 主邏輯
-# ===============================
-def main():
-    st.sidebar.title("功能選單")
-    menu = st.sidebar.radio("請選擇：", ["🏠 首頁", "🔐 管理員登入", "📋 管理後台"])
-
-    if menu == "🏠 首頁":
-        voter_page()
-    elif menu == "🔐 管理員登入":
-        admin_login()
-    elif menu == "📋 管理後台":
-        if st.session_state.get("is_admin", False):
-            admin_dashboard()
-        else:
-            st.warning("請先登入管理員帳號。")
-
-if __name__ == "__main__":
-    main()
