@@ -296,9 +296,6 @@ def voter_page():
                     st.success(f"投票成功！您選擇了：{vote_option}")
                     st.experimental_rerun() 
 
-# ===============================
-# 管理員登入 (保持不變)
-# ===============================
 def admin_login():
     st.header("🔐 管理員登入")
 
@@ -309,3 +306,21 @@ def admin_login():
     password = st.text_input("密碼", type="password")
 
     if st.button("登入"):
+        if not os.path.exists(ADMIN_FILE):
+            st.error("找不到 admin_config.json，請確認檔案存在。")
+            return
+
+        try:
+            with open(ADMIN_FILE, "r", encoding="utf-8") as f:
+                admin_data = json.load(f)
+        except Exception as e:
+            st.error(f"讀取 admin_config.json 失敗：{e}")
+            return
+
+        if username in admin_data and password == str(admin_data[username]):
+            st.session_state.is_admin = True
+            st.session_state.admin_user = username
+            st.success(f"登入成功！歡迎管理員 {username}")
+            st.experimental_rerun()
+        else:
+            st.error("帳號或密碼錯誤。")
