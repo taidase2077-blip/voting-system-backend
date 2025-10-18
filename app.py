@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 from pytz import timezone
 from PIL import Image, ImageDraw, ImageFont
 
-# ---------- 🧩 初始化資料 ----------
+# ===============================
+# 🧩 初始化設定
+# ===============================
 DB_FOLDER = "db"
 os.makedirs(DB_FOLDER, exist_ok=True)
 
@@ -19,11 +21,15 @@ TOPIC_FILE = os.path.join(DB_FOLDER, "topics.csv")
 HOUSEHOLD_FILE = os.path.join(DB_FOLDER, "households.csv")
 ADMIN_FILE = "admin_config.json"  # 管理員帳密
 
-# ---------- 🕒 時區處理 ----------
+# ===============================
+# 🕒 時間工具
+# ===============================
 def get_taipei_time():
     return datetime.now(timezone("Asia/Taipei"))
 
-# ---------- ⚙️ 設定管理 ----------
+# ===============================
+# ⚙️ 設定檔處理
+# ===============================
 def save_config(key, value):
     data = {}
     if os.path.exists(CONFIG_FILE):
@@ -40,14 +46,14 @@ def load_config(key):
         data = json.load(f)
     return data.get(key)
 
-# ---------- 📂 檔案存取 ----------
+# ===============================
+# 📂 資料存取
+# ===============================
 def save_topics_to_db(df):
     df.to_csv(TOPIC_FILE, index=False, encoding="utf-8-sig")
-    return True
 
 def save_households_to_db(df):
     df.to_csv(HOUSEHOLD_FILE, index=False, encoding="utf-8-sig")
-    return True
 
 def load_data_from_db(file_path, expected_columns=None):
     if not os.path.exists(file_path):
@@ -59,7 +65,9 @@ def load_data_from_db(file_path, expected_columns=None):
                 df[col] = ""
     return df
 
-# ---------- 🧮 登入檢查 ----------
+# ===============================
+# 🧮 登入檢查
+# ===============================
 def check_login(username, password):
     try:
         with open(ADMIN_FILE, "r", encoding="utf-8") as f:
@@ -68,7 +76,9 @@ def check_login(username, password):
     except Exception:
         return False
 
-# ---------- 🧰 產生帶戶號文字的 QR Code ----------
+# ===============================
+# 🧰 產生 QR Code（含戶號）
+# ===============================
 def generate_qr_with_label(vote_url, household_id):
     qr = qrcode.QRCode(
         version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4
@@ -94,7 +104,9 @@ def generate_qr_with_label(vote_url, household_id):
 
     return new_img
 
-# ---------- 🧰 產生 QR Code ZIP ----------
+# ===============================
+# 📦 產生 QR Code ZIP
+# ===============================
 def generate_qr_zip(df):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as zipf:
@@ -110,10 +122,45 @@ def generate_qr_zip(df):
     buffer.seek(0)
     return buffer
 
-# ---------- 🏠 住戶投票頁 ----------
+# ===============================
+# 🗳️ 投票紀錄
+# ===============================
+def record_vote_batch(household_id, votes_dict):
+    df = load_data_from_db(VOTE_FILE, expected_columns=["戶號", "議題", "投票結果", "投票時間"])
+    now = get_taipei_time().strftime("%Y-%m-%d %H:%M:%S")
+
+    new_rows = []
+    for topic, result in votes_dict.items():
+        new_rows.append({
+            "戶號": household_id,
+            "議題": topic,
+            "投票結果": result,
+            "投票時間": now
+        })
+
+    df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+    df.to_csv(VOTE_FILE, index=False, encoding="utf-8-sig")
+
+# ===============================
+# 🏠 住戶投票頁
+# ===============================
 def voting_page(household_id):
     st.title("🏠 社區投票系統")
     st.write(f"👤 戶號：**{household_id}**")
+
+    # 讀取投票開關
+    voting_open = load_config("voting_open") == "True"
+    if not voting_open:
+        st.warning("⚠️ 投票尚未開放，請稍後再試。")
+        return
+
+    # 讀取截止時間
+    end_time_str = load_config("end_time")
+    if end_time_str:
+        end_time = datetime.strptime(end_time_str, "%Y-%m-%d %H:%M:%S %z")
+        if get_taipei_time() > end_time:
+            st.warning("⛔ 投票時間已截止。")
+            return
 
     votes_df = load_data_from_db(VOTE_FILE, expected_columns=["戶號", "議題", "投票結果", "投票時間"])
     topics_df = load_data_from_db(TOPIC_FILE)
@@ -122,164 +169,122 @@ def voting_page(household_id):
         st.info("目前尚無投票議題。")
         return
 
-    # 取得該戶已投過票的議題
     voted_topics = votes_df[votes_df["戶號"].astype(str) == household_id]["議題"].tolist()
-    remaining_topics = [t for t in topics_df["議題"].tolist() if t not in voted_topics]
 
-    if not remaining_topics:
+    if len(voted_topics) == len(topics_df):
         st.warning("⚠️ 您已完成所有議題投票，無法重複投票。")
         return
 
-    st.write("請選擇您的投票意見：")
+    st.write("請為每一個議題選擇您的意見，全部選完後再送出：")
+
+    choices = {}
     for _, row in topics_df.iterrows():
         topic = row.get("議題", "未命名議題")
-
-        # 若該題已投過，跳過顯示
         if topic in voted_topics:
             continue
+        choice = st.radio(
+            f"🗳️ {topic}",
+            ["未選擇", "同意", "不同意"],
+            index=0,
+            horizontal=True,
+            key=f"vote_{topic}"
+        )
+        if choice != "未選擇":
+            choices[topic] = choice
 
-        st.subheader(f"🗳️ {topic}")
-        col1, col2 = st.columns(2)
-        if col1.button("👍 同意", key=f"agree_{topic}"):
-            record_vote(household_id, topic, "同意")
-            st.success(f"✅ 已對「{topic}」投下同意票")
+    if st.button("📤 送出投票"):
+        if len(choices) < len(topics_df) - len(voted_topics):
+            st.warning("⚠️ 請確保所有議題都已選擇意見後再送出。")
+        else:
+            record_vote_batch(household_id, choices)
+            st.success("✅ 投票完成！感謝您的參與。")
             st.rerun()
-        if col2.button("👎 不同意", key=f"disagree_{topic}"):
-            record_vote(household_id, topic, "不同意")
-            st.success(f"✅ 已對「{topic}」投下不同意票")
-            st.rerun()
 
-# ---------- 🗳️ 投票記錄 ----------
-def record_vote(household_id, topic, result):
-    df = load_data_from_db(VOTE_FILE, expected_columns=["戶號", "議題", "投票結果", "投票時間"])
-    new_row = {
-        "戶號": household_id,
-        "議題": topic,
-        "投票結果": result,
-        "投票時間": get_taipei_time().strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    df.to_csv(VOTE_FILE, index=False, encoding="utf-8-sig")
-
-# ---------- 🧰 管理員後台 ----------
+# ===============================
+# 🧰 管理員後台
+# ===============================
 def admin_dashboard():
     st.title("🛠️ 管理員後台")
-
     tab1, tab2, tab3 = st.tabs(["📂 上傳資料", "📋 投票控制", "📊 統計結果"])
 
-    # === 📂 上傳資料 ===
+    # ---- 上傳資料 ----
     with tab1:
         st.subheader("上傳住戶清單")
         household_file = st.file_uploader("上傳住戶 Excel 檔", type=["xlsx"])
-
         if household_file:
             import openpyxl
             df = pd.read_excel(household_file)
             if "戶號" not in df.columns:
-                st.error("⚠️ Excel 檔必須包含「戶號」欄位")
+                st.error("⚠️ Excel 必須包含「戶號」欄位")
             else:
                 save_households_to_db(df)
                 st.success("✅ 住戶清單上傳成功")
 
-                if st.button("📦 產生戶號 QR Code ZIP（含戶號標籤）"):
-                    with st.spinner("正在生成 QR Code ZIP，請稍候..."):
-                        qr_zip = generate_qr_zip(df)
-                    st.download_button(
-                        label="⬇️ 下載 ZIP 檔",
-                        data=qr_zip,
-                        file_name="household_qrcodes.zip",
-                        mime="application/zip",
-                    )
+                if st.button("📦 產生 QR Code ZIP"):
+                    qr_zip = generate_qr_zip(df)
+                    st.download_button("⬇️ 下載 ZIP", data=qr_zip, file_name="qrcodes.zip", mime="application/zip")
 
         st.divider()
         st.subheader("上傳議題清單")
         topic_file = st.file_uploader("上傳議題 Excel 檔", type=["xlsx"])
-
         if topic_file:
-            if st.button("📤 確認上傳議題清單"):
-                with st.spinner("正在處理議題清單..."):
-                    import openpyxl
-                    df = pd.read_excel(topic_file)
-                    save_topics_to_db(df)
-                st.success("✅ 議題清單上傳成功")
+            import openpyxl
+            df = pd.read_excel(topic_file)
+            save_topics_to_db(df)
+            st.success("✅ 議題清單上傳成功")
 
-    # === 📋 投票控制 ===
+    # ---- 投票控制 ----
     with tab2:
-        st.subheader("投票開關控制")
-        voting_open = load_config('voting_open') == 'True'
-        toggle_val = st.toggle("開啟投票", value=voting_open)
-        save_config('voting_open', str(toggle_val))
+        st.subheader("投票開關")
+        toggle_val = st.toggle("開啟投票", value=(load_config("voting_open") == "True"))
+        save_config("voting_open", str(toggle_val))
         st.info("🔄 投票狀態：" + ("✅ 開啟" if toggle_val else "⛔ 關閉"))
 
         st.divider()
-        st.subheader("設定投票截止時間（台北時間）")
-
-        current_end_str = load_config('end_time')
-        if current_end_str:
-            st.write(f"目前截止時間：**{current_end_str}**（台北）")
-        else:
-            st.write("尚未設定截止時間")
-
+        st.subheader("設定截止時間（台北時間）")
         now_taipei = get_taipei_time()
-        st.write(f"🕒 現在時間：{now_taipei.strftime('%Y-%m-%d %H:%M:%S')}（台北）")
-
-        option = st.selectbox(
-            "選擇距現在的截止時間：",
-            ["自訂時間", "5 分鐘後", "10 分鐘後", "15 分鐘後", "20 分鐘後", "25 分鐘後", "30 分鐘後", "自訂輸入分鐘數"],
-            index=2
-        )
-
-        if option == "自訂時間":
-            date_val = st.date_input("選擇截止日期", now_taipei.date())
-            time_val = st.time_input("選擇截止時間", (now_taipei + timedelta(minutes=10)).time())
+        option = st.selectbox("設定截止時間", ["5分鐘後", "10分鐘後", "15分鐘後", "自訂"], index=1)
+        if option == "自訂":
+            date_val = st.date_input("日期", now_taipei.date())
+            time_val = st.time_input("時間", (now_taipei + timedelta(minutes=10)).time())
             end_dt = datetime.combine(date_val, time_val).astimezone(timezone("Asia/Taipei"))
-
-        elif option == "自訂輸入分鐘數":
-            custom_min = st.number_input("請輸入距現在的分鐘數", min_value=1, max_value=1440, value=10, step=1)
-            end_dt = now_taipei + timedelta(minutes=custom_min)
-            st.info(f"⏰ 系統將設定為：{end_dt.strftime('%Y-%m-%d %H:%M:%S')}（台北時間）")
-
         else:
-            minutes = int(option.split("分鐘")[0])
-            end_dt = now_taipei + timedelta(minutes=minutes)
-            st.info(f"⏰ 系統將設定為：{end_dt.strftime('%Y-%m-%d %H:%M:%S')}（台北時間）")
+            mins = int(option.split("分鐘")[0])
+            end_dt = now_taipei + timedelta(minutes=mins)
 
         if st.button("儲存截止時間"):
-            save_config('end_time', end_dt.strftime("%Y-%m-%d %H:%M:%S %z"))
-            st.success(f"✅ 截止時間已設定為：{end_dt.strftime('%Y-%m-%d %H:%M:%S')}（台北時間）")
+            save_config("end_time", end_dt.strftime("%Y-%m-%d %H:%M:%S %z"))
+            st.success(f"✅ 截止時間設定為 {end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # === 📊 投票統計 ===
+    # ---- 統計結果 ----
     with tab3:
-        st.subheader("投票結果統計")
-
         votes_df = load_data_from_db(VOTE_FILE, expected_columns=["戶號", "議題", "投票結果", "投票時間"])
         topics_df = load_data_from_db(TOPIC_FILE)
         households_df = load_data_from_db(HOUSEHOLD_FILE)
 
-        if votes_df.empty or topics_df.empty:
-            st.info("目前尚無投票資料。")
+        if votes_df.empty:
+            st.info("尚無投票資料")
         else:
             for _, row in topics_df.iterrows():
-                topic = row.get("議題", "未命名議題")
+                topic = row["議題"]
                 topic_votes = votes_df[votes_df["議題"] == topic]
                 total_voters = len(households_df)
                 total_votes = len(topic_votes)
                 agree = len(topic_votes[topic_votes["投票結果"] == "同意"])
                 disagree = len(topic_votes[topic_votes["投票結果"] == "不同意"])
-                agree_ratio = agree / total_voters if total_voters > 0 else 0
-                disagree_ratio = disagree / total_voters if total_voters > 0 else 0
 
                 st.markdown(f"### 🗳️ {topic}")
-                st.write(f"📋 總戶數：{total_voters}")
-                st.write(f"🧾 已投票人數：{total_votes}")
-                st.write(f"👍 同意：{agree} ({agree_ratio:.4%})")
-                st.write(f"👎 不同意：{disagree} ({disagree_ratio:.4%})")
+                st.write(f"總戶數：{total_voters}")
+                st.write(f"投票數：{total_votes}")
+                st.write(f"👍 同意：{agree}  ({agree/total_voters:.2%})")
+                st.write(f"👎 不同意：{disagree}  ({disagree/total_voters:.2%})")
                 st.divider()
 
-# ---------- 🧭 主程式 ----------
+# ===============================
+# 🧭 主程式
+# ===============================
 def main():
     st.set_page_config(page_title="🏠 社區投票系統", layout="wide")
-
     params = st.query_params
     if "vote" in params:
         household_id = params.get("vote", [None])[0]
@@ -287,25 +292,23 @@ def main():
         return
 
     st.title("🏠 社區投票系統")
-
     tab_login, tab_admin = st.tabs(["🔐 管理員登入", "📊 管理後台"])
 
     with tab_login:
-        st.subheader("請輸入管理員帳號密碼")
         username = st.text_input("帳號")
         password = st.text_input("密碼", type="password")
         if st.button("登入"):
             if check_login(username, password):
                 st.session_state["admin_logged_in"] = True
-                st.success("✅ 登入成功！請切換至『📊 管理後台』")
+                st.success("登入成功，請切換到管理後台。")
             else:
-                st.error("❌ 帳號或密碼錯誤")
+                st.error("帳號或密碼錯誤")
 
     with tab_admin:
         if st.session_state.get("admin_logged_in", False):
             admin_dashboard()
         else:
-            st.warning("請先登入管理員帳號")
+            st.warning("請先登入")
 
 if __name__ == "__main__":
     main()
