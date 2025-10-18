@@ -84,8 +84,8 @@ def generate_qr_with_label(vote_url, household_id):
 
     draw = ImageDraw.Draw(new_img)
     # 【修正 1：解決 502 潛在問題】直接使用預設字體，避免在 Render 環境中找不到 'arial.ttf' 導致應用程式崩潰
-    font = ImageFont.load_default() 
-    
+    font = ImageFont.load_default() 
+    
     text = str(household_id)
     text_width = draw.textlength(text, font=font)
     text_x = (width - text_width) / 2
@@ -124,14 +124,14 @@ def voting_page(household_id):
     # 取得該戶已投過票的議題及結果
     household_votes = votes_df[votes_df["戶號"].astype(str) == household_id]
     voted_topics = household_votes["議題"].tolist()
-    
+    
     all_topics = topics_df["議題"].tolist()
     remaining_topics = [t for t in all_topics if t not in voted_topics]
 
-    
+    
     st.write("請選擇您的投票意見：")
     all_voted = True
-    
+    
     for _, row in topics_df.iterrows():
         topic = row.get("議題", "未命名議題")
         st.subheader(f"🗳️ {topic}")
@@ -152,7 +152,7 @@ def voting_page(household_id):
                 record_vote(household_id, topic, "不同意")
                 st.rerun()
             st.markdown("---") # 在未投票議題間用分隔線區隔
-    
+    
     if all_voted:
         st.warning("⚠️ 您已完成所有議題投票，感謝您的參與。")
 
@@ -284,8 +284,26 @@ def admin_dashboard():
                 st.write(f"👎 不同意：{disagree} ({disagree_ratio:.4%})")
                 st.divider()
 
+# ---------- ⚙️ 系統初始化檢查 (新增) ----------
+def initialize_admin_config():
+    """確保管理員配置檔案存在，且至少包含一個預設帳密。"""
+    if not os.path.exists(ADMIN_FILE):
+        default_admin = {"admin": "123456"} # 請自行設定預設帳密
+        # 確保 DB_FOLDER 存在，儘管頂部已經 os.makedirs(DB_FOLDER)，再次檢查更保險
+        os.makedirs(os.path.dirname(ADMIN_FILE) or ".", exist_ok=True) 
+        try:
+            with open(ADMIN_FILE, "w", encoding="utf-8") as f:
+                json.dump(default_admin, f, ensure_ascii=False, indent=2)
+        except Exception:
+            # 這裡捕獲錯誤，但因為在 Streamlit 啟動前，無法用 st.error
+            pass
+
+
 # ---------- 🧭 主程式 ----------
 def main():
+    # 【新增：初始化管理員配置檔案】
+    initialize_admin_config()
+    
     st.set_page_config(page_title="🏠 社區投票系統", layout="wide")
 
     params = st.query_params
