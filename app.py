@@ -17,7 +17,7 @@ CONFIG_FILE = os.path.join(DB_FOLDER, "config.json")
 VOTE_FILE = os.path.join(DB_FOLDER, "votes.csv")
 TOPIC_FILE = os.path.join(DB_FOLDER, "topics.csv")
 HOUSEHOLD_FILE = os.path.join(DB_FOLDER, "households.csv")
-ADMIN_FILE = "admin_config.json"  # 管理員帳密
+ADMIN_FILE = "admin_config.json" # 管理員帳密
 
 # ---------- 🕒 時區處理 ----------
 def get_taipei_time():
