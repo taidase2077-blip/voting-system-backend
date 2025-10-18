@@ -189,10 +189,10 @@ def get_taipei_time():
     return datetime.now(timezone("Asia/Taipei"))
 
 # ===============================
-# 工具函式 (QR Code 最終版本)
+# 工具函式 (QR Code 最終版本 - 移除圖片上的文字，但保留 ZIP 壓縮)
 # ===============================
 def generate_qr_zip(households_df, base_url):
-    """產生 QR Code ZIP (極簡版本，不帶文字，以確保 Render 兼容性)"""
+    """生成 QR Code ZIP，但不包含圖片上的文字繪製"""
     if households_df.empty:
         st.warning("尚未上傳住戶清單，無法產生 QR Code。")
         return None
@@ -211,17 +211,16 @@ def generate_qr_zip(households_df, base_url):
                  
             qr_link = f"{base_url}?unit={house_id}"
 
+            # *** 核心修正：只生成 QR Code 圖片，不進行任何繪圖操作 ***
             qr_img = qrcode.make(qr_link).convert("RGB")
-            
-            # *** 極簡修正：直接使用 QR code 圖片作為最終圖片 ***
-            new_img = qr_img 
+            new_img = qr_img # 直接使用 QR code 圖片
             # *** 修正結束 ***
             
             img_bytes = io.BytesIO()
             new_img.save(img_bytes, format="PNG") 
             
             img_bytes.seek(0)
-            # 檔案名包含戶號
+            # 檔案名包含戶號，確保列印後仍可識別
             zf.writestr(f"{house_id}.png", img_bytes.read()) 
 
     zip_buffer.seek(0)
