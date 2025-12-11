@@ -1,18 +1,7 @@
-# requirements.txt
-# --- 核心 ---
-streamlit==1.38.0
-pandas==2.2.3   # 兼容 Python 3.13
-numpy==2.3.4    # 兼容 Python 3.13
-
-# --- 輔助 ---
-qrcode[pil]==7.4.2
-Pillow==10.4.0
-openpyxl==3.1.5
-XlsxWriter==3.2.0
-pytz==2024.1
-streamlit-autorefresh==1.0.1
-
-# --- 避免相容性問題 ---
-setuptools<70.0
-wheel
-pip<25.2
+streamlit
+pandas
+openpyxl
+qrcode
+pillow
+pytz
+streamlit-autorefresh
