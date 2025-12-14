@@ -1,7 +1,6 @@
-streamlit
-pandas
-openpyxl
-qrcode
-pillow
+
+streamlit==1.38.0
+pandas==2.2.2
 pytz
-streamlit-autorefresh
+matplotlib
+openpyxl
